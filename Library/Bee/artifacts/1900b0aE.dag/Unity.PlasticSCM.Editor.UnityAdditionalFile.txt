@@ -1,9 +1,1 @@
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 C:\Users\YasoXtreme\Documents\GitHub\Smart-Checkpoints
-=======
-C:\Users\Noureldin\Documents\GitHub\Smart-Checkpoints
->>>>>>> Stashed changes
-=======
-C:\Users\Noureldin\Documents\GitHub\Smart-Checkpoints
->>>>>>> Stashed changes
