@@ -743,7 +743,13 @@ PlayerSettings:
   XboxOneOverrideIdentityPublisher: 
   vrEditorSettings: {}
   cloudServicesEnabled:
+    Build: 0
+    Game Performance: 0
+    Legacy Analytics: 0
+    Purchasing: 0
+    UDP: 0
     UNet: 1
+    Unity Ads: 0
   luminIcon:
     m_Name: 
     m_ModelFolderPath: 
@@ -763,10 +769,10 @@ PlayerSettings:
   apiCompatibilityLevel: 6
   activeInputHandler: 0
   windowsGamepadBackendHint: 0
-  cloudProjectId: d54e452c-2ee7-42d0-8259-ff21ae64bb20
+  cloudProjectId: 7d1ba1ee-22c2-4117-a256-2576a9956e0e
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName: Smart Checkpoints 2025-12-05_18-24-33
+  projectName: Smart Checkpoints
   organizationId: yasoxtreme5486
   cloudEnabled: 0
   legacyClampBlendShapeWeights: 0

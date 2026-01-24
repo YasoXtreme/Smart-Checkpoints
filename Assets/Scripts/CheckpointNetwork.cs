@@ -76,6 +76,9 @@ public class CheckpointNetwork : MonoBehaviour
 
         Debug.Log($"[Network] Connection Created: {idA} -> {idB} (Dist: {dist:F1}m, Limit: {speedLimit}km/h)");
 
+        // Trigger ghost car runs for best path visualization
+        RecalculateConnectionTime(idA, idB);
+
         // Notify cars that network changed
         OnNetworkChanged?.Invoke();
     }

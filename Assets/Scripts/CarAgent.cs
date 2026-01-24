@@ -25,6 +25,7 @@ public class CarAgent : MonoBehaviour
     public float currentConnectionSpeedLimit = 50f;
 
     [Header("Behavior Settings")]
+    [Range(0f, 1f)] public float speedOffsetPercent = 0.1f; // 10% default
     [Range(0f, 1f)] public float safeRangePercent = 0.1f;
     [Range(0f, 1f)] public float dangerousRangePercent = 0.5f;
     public float checkpointAwarenessRadius = 30f;
@@ -40,6 +41,9 @@ public class CarAgent : MonoBehaviour
     [HideInInspector] public float targetSpeed;
     [HideInInspector] public float spawnTime;
     [HideInInspector] public CarAgent limitingCar;
+
+    [Header("Debug Info")]
+    [SerializeField] private float targetSpeedKmH; // Visible in inspector
 
     // Events
     public event Action OnDestinationReached;
@@ -110,21 +114,23 @@ public class CarAgent : MonoBehaviour
         if (passport == null)
         {
             targetSpeed = currentConnectionSpeedLimit / SPEED_CONVERSION;
+            targetSpeedKmH = currentConnectionSpeedLimit;
             return;
         }
 
         float baseSpeed = currentConnectionSpeedLimit;
+        float offset = speedOffsetPercent * baseSpeed;
 
         switch (passport.behaviorType)
         {
             case CarBehavior.Safe:
-                // Drive at speed limit minus random reduction
-                targetSpeed = (baseSpeed - (randomFactor * safeRangePercent * baseSpeed)) / SPEED_CONVERSION;
+                // Drive at speed limit minus offset and random reduction
+                targetSpeed = (baseSpeed - offset - (randomFactor * safeRangePercent * baseSpeed)) / SPEED_CONVERSION;
                 break;
 
             case CarBehavior.Speeding:
-                // Drive above speed limit
-                targetSpeed = (baseSpeed + (randomFactor * dangerousRangePercent * baseSpeed)) / SPEED_CONVERSION;
+                // Drive above speed limit plus offset
+                targetSpeed = (baseSpeed + offset + (randomFactor * dangerousRangePercent * baseSpeed)) / SPEED_CONVERSION;
                 passport.wasActuallySpeeding = true;
                 break;
 
@@ -133,17 +139,20 @@ public class CarAgent : MonoBehaviour
                 bool nearCheckpoint = IsNearNextCheckpoint();
                 if (nearCheckpoint)
                 {
-                    // Act safe near checkpoints
-                    targetSpeed = (baseSpeed - (randomFactor * safeRangePercent * baseSpeed)) / SPEED_CONVERSION;
+                    // Fake compliance: subtract offset
+                    targetSpeed = (baseSpeed - offset - (randomFactor * safeRangePercent * baseSpeed)) / SPEED_CONVERSION;
                 }
                 else
                 {
-                    // Speed when away from checkpoints
-                    targetSpeed = (baseSpeed + (randomFactor * dangerousRangePercent * baseSpeed)) / SPEED_CONVERSION;
+                    // Speeding: add offset
+                    targetSpeed = (baseSpeed + offset + (randomFactor * dangerousRangePercent * baseSpeed)) / SPEED_CONVERSION;
                     passport.wasActuallySpeeding = true;
                 }
                 break;
         }
+
+        // Update inspector-visible target speed in km/h
+        targetSpeedKmH = targetSpeed * SPEED_CONVERSION;
     }
 
     bool IsNearNextCheckpoint()
