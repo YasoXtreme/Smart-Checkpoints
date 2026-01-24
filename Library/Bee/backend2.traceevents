@@ -1,5 +1,6 @@
 { "cat":"", "pid":12345, "tid":0, "ts":0, "ph":"M", "name":"process_name", "args": { "name":"bee_backend" } }
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 ,{ "pid":12345, "tid":0, "ts":1769279498813138, "dur":46393, "ph":"X", "name": "DriverInitData",  "args": { "detail":"" }}
 ,{ "pid":12345, "tid":0, "ts":1769279498859551, "dur":287, "ph":"X", "name": "RemoveStaleOutputs",  "args": { "detail":"" }}
 ,{ "pid":12345, "tid":0, "ts":1769279498859901, "dur":53, "ph":"X", "name": "Tundra",  "args": { "detail":"PrepareNodes" }}
@@ -2751,6 +2752,8 @@
 ,{ "pid":12345, "tid":4, "ts":1769279499055584, "dur":76, "ph":"X", "name": "WaitingForWork", "cname":"thread_state_sleeping",  "args": { "detail":"" }}
 ,{ "pid":12345, "tid":0, "ts":1769279499063186, "dur":10712, "ph":"X", "name": "ProfilerWriteOutput" }
 =======
+=======
+>>>>>>> Stashed changes
 ,{ "pid":12345, "tid":0, "ts":1769260236537615, "dur":53, "ph":"X", "name": "IPC_Client_InitializeAndConnectToParent",  "args": { "detail":"" }}
 ,{ "pid":12345, "tid":0, "ts":1769260236537724, "dur":27810, "ph":"X", "name": "DriverInitData",  "args": { "detail":"" }}
 ,{ "pid":12345, "tid":0, "ts":1769260236565546, "dur":234, "ph":"X", "name": "RemoveStaleOutputs",  "args": { "detail":"" }}
@@ -3792,5 +3795,8 @@
 ,{ "pid":12345, "tid":8, "ts":1769260236627077, "dur":312, "ph":"X", "name": "CheckInputSignature",  "args": { "detail":"Csc Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp-Editor.dll (+2 others)" }}
 ,{ "pid":12345, "tid":8, "ts":1769260236627390, "dur":124, "ph":"X", "name": "OutputFilesMissingFor",  "args": { "detail":"" }}
 ,{ "pid":12345, "tid":0, "ts":1769260236633120, "dur":2963, "ph":"X", "name": "ProfilerWriteOutput" }
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 ,
