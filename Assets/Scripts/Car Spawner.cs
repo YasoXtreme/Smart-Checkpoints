@@ -38,6 +38,7 @@ public class CarSpawner : MonoBehaviour
     public SpawnerState currentState = SpawnerState.Normal;
     public int testCarsSpawned = 0;
     public int testCarsFinished = 0;
+    public bool simulationActive = false;
 
     // Internal
     private int carCount = 0;
@@ -70,6 +71,9 @@ public class CarSpawner : MonoBehaviour
 
     void Update()
     {
+        // Don't process any spawning if simulation is not active
+        if (!simulationActive) return;
+
         // TRIGGER TEST PLAN
         if (Input.GetKeyDown(KeyCode.T) && currentState == SpawnerState.Normal)
         {
@@ -272,6 +276,24 @@ public class CarSpawner : MonoBehaviour
             }
         }
         Debug.Log($"Test Plan saved to: {filePath}");
+    }
+
+    /// <summary>
+    /// Called by UIManager to start the simulation
+    /// </summary>
+    public void StartSimulation()
+    {
+        simulationActive = true;
+        Debug.Log("Simulation started - cars will begin spawning");
+    }
+
+    /// <summary>
+    /// Called by UIManager to pause the simulation
+    /// </summary>
+    public void PauseSimulation()
+    {
+        simulationActive = false;
+        Debug.Log("Simulation paused - no new cars will spawn");
     }
 
     private Transform GetWeightedPoint(WeightedPoint[] points)

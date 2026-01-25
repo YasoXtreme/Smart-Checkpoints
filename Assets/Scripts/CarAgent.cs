@@ -55,6 +55,7 @@ public class CarAgent : MonoBehaviour
     private CarAgent previousLimitingCar;
     private bool isIgnoringDeadlock = false;
     private float lifeTime = 0f;
+    private CheckpointNetwork.Connection currentConnection;
 
     private const float SPEED_CONVERSION = 3.6f;
 
@@ -76,6 +77,12 @@ public class CarAgent : MonoBehaviour
 
     void OnDestroy()
     {
+        // Decrement car count from current connection
+        if (currentConnection != null)
+        {
+            currentConnection.DecrementCarCount();
+        }
+
         // Unsubscribe from network changes
         if (CheckpointNetwork.Instance != null)
         {
@@ -275,12 +282,32 @@ public class CarAgent : MonoBehaviour
                 // Update connection speed limit from checkpoint network
                 if (i + 1 < routeCheckpoints.Count)
                 {
-                    var connection = CheckpointNetwork.Instance?.GetConnections()
+                    var newConnection = CheckpointNetwork.Instance?.GetConnections()
                         .Find(c => c.fromID == checkpoint.checkpointID && 
                                    c.toID == routeCheckpoints[i + 1].checkpointID);
-                    if (connection != null)
+                    if (newConnection != null)
                     {
-                        currentConnectionSpeedLimit = connection.speedLimitKmH;
+                        currentConnectionSpeedLimit = newConnection.speedLimitKmH;
+
+                        // Track connection change and update car counts
+                        if (currentConnection != newConnection)
+                        {
+                            if (currentConnection != null)
+                            {
+                                currentConnection.DecrementCarCount();
+                            }
+                            currentConnection = newConnection;
+                            currentConnection.IncrementCarCount();
+                        }
+                    }
+                }
+                else
+                {
+                    // Reached the end of the route, leaving current connection
+                    if (currentConnection != null)
+                    {
+                        currentConnection.DecrementCarCount();
+                        currentConnection = null;
                     }
                 }
                 break;

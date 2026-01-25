@@ -19,6 +19,7 @@ public class CheckpointNetwork : MonoBehaviour
         public float speedLimitKmH;
         public float distanceMeters;
         public float minTraversalTime; // Calculated by ghost cars
+        public int currentCarCount = 0;
 
         public float GetMinTraversalTime()
         {
@@ -26,6 +27,25 @@ public class CheckpointNetwork : MonoBehaviour
             float speedMS = speedLimitKmH / 3.6f;
             if (speedMS <= 0) return 0;
             return distanceMeters / speedMS;
+        }
+
+        public void IncrementCarCount()
+        {
+            currentCarCount++;
+        }
+
+        public void DecrementCarCount()
+        {
+            currentCarCount = Mathf.Max(0, currentCarCount - 1);
+        }
+
+        /// <summary>
+        /// Returns traffic density as cars per 100 meters
+        /// </summary>
+        public float GetTrafficDensity()
+        {
+            if (distanceMeters <= 0) return 0;
+            return (currentCarCount / distanceMeters) * 100f;
         }
     }
 

@@ -374,6 +374,7 @@
 "Assets/Scripts/SmartCheckpoint.cs"
 "Assets/Scripts/SplineMath.cs"
 "Assets/Scripts/TrafficManager.cs"
+"Assets/Scripts/UIManager.cs"
 "Assets/Scripts/ViolationLogManager.cs"
 "Assets/Scripts/Waypoint.cs"
 -langversion:9.0

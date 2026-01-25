@@ -28,8 +28,20 @@ public class GraphUIEditor : MonoBehaviour
     public float bidirectionalSeparation = 10f;
     
     [Header("Interactive Colors")]
-    public Color hoverColor = Color.yellow; // NEW: Pick your hover color here!
-    public Color normalColor = Color.white;
+    public Color connectionHoverColor = Color.yellow;
+    public Color nodeHoverColor = Color.red;
+
+    [Header("Traffic Density Colors")]
+    [Tooltip("Traffic density thresholds (cars per 100 meters). Colors apply at or above each threshold.")]
+    public List<float> densityThresholds = new List<float> { 0f, 2f, 5f, 10f };
+    [Tooltip("Colors corresponding to each threshold. Should have same count as thresholds.")]
+    public List<Color> densityColors = new List<Color> 
+    { 
+        Color.green,                      // 0+ cars/100m: light traffic
+        Color.yellow,                     // 2+ cars/100m: moderate
+        new Color(1f, 0.5f, 0f),          // 5+ cars/100m: heavy (orange)
+        Color.red                         // 10+ cars/100m: congested
+    };
 
     [Header("Editing State")]
     public bool isSoftwareOpen = false;
@@ -65,8 +77,6 @@ public class GraphUIEditor : MonoBehaviour
 
     void Update()
     {
-        if (Input.GetKeyDown(KeyCode.Tab)) ToggleSoftware();
-
         if (isSoftwareOpen)
         {
             SyncNodes();
@@ -75,11 +85,23 @@ public class GraphUIEditor : MonoBehaviour
         }
     }
 
-    void ToggleSoftware()
+    /// <summary>
+    /// Called by UIManager to show the software
+    /// </summary>
+    public void OpenSoftware()
     {
-        isSoftwareOpen = !isSoftwareOpen;
-        if (softwareCanvas != null) softwareCanvas.enabled = isSoftwareOpen;
-        if (!isSoftwareOpen) ClosePanel();
+        isSoftwareOpen = true;
+        if (softwareCanvas != null) softwareCanvas.enabled = true;
+    }
+
+    /// <summary>
+    /// Called by UIManager to hide the software
+    /// </summary>
+    public void CloseSoftware()
+    {
+        isSoftwareOpen = false;
+        if (softwareCanvas != null) softwareCanvas.enabled = false;
+        ClosePanel();
     }
 
     // --- PANEL LOGIC ---
@@ -135,10 +157,10 @@ public class GraphUIEditor : MonoBehaviour
                 Button btn = newLine.GetComponent<Button>();
                 if (btn == null) btn = newLine.AddComponent<Button>();
                 
-                // --- NEW: HOVER COLOR SETUP ---
+                // Hover color setup - normal color will be updated dynamically
                 ColorBlock cb = btn.colors;
-                cb.normalColor = normalColor;
-                cb.highlightedColor = hoverColor; // The magic happens here
+                cb.normalColor = GetConnectionColor(conn);
+                cb.highlightedColor = connectionHoverColor;
                 cb.pressedColor = new Color(0.7f, 0.7f, 0.7f);
                 cb.colorMultiplier = 1f;
                 cb.fadeDuration = 0.1f;
@@ -172,6 +194,15 @@ public class GraphUIEditor : MonoBehaviour
                 if (nodeA.activeSelf && nodeB.activeSelf)
                 {
                     activeLineInstances[key].SetActive(true);
+
+                    // Update connection color based on current traffic density
+                    Button lineBtn = activeLineInstances[key].GetComponent<Button>();
+                    if (lineBtn != null)
+                    {
+                        ColorBlock cb = lineBtn.colors;
+                        cb.normalColor = GetConnectionColor(conn);
+                        lineBtn.colors = cb;
+                    }
 
                     // Offset Calculation
                     Vector2 posA = nodeA.GetComponent<RectTransform>().anchoredPosition;
@@ -244,7 +275,7 @@ public class GraphUIEditor : MonoBehaviour
     {
         int hoveredID = GetHoveredNodeID();
         foreach(var node in uiNodeInstances.Values) node.GetComponent<Image>().color = Color.white;
-        if(hoveredID != -1) uiNodeInstances[hoveredID].GetComponent<Image>().color = Color.red;
+        if(hoveredID != -1) uiNodeInstances[hoveredID].GetComponent<Image>().color = nodeHoverColor;
 
         if (Input.GetMouseButtonDown(1)) 
         {
@@ -317,5 +348,27 @@ public class GraphUIEditor : MonoBehaviour
     void DisableRaycast(GameObject obj)
     {
         foreach(var graphic in obj.GetComponentsInChildren<Graphic>()) graphic.raycastTarget = false;
+    }
+
+    /// <summary>
+    /// Returns the color for a connection based on its current traffic density.
+    /// </summary>
+    Color GetConnectionColor(CheckpointNetwork.Connection conn)
+    {
+        if (densityThresholds.Count == 0 || densityColors.Count == 0)
+            return Color.white;
+
+        float density = conn.GetTrafficDensity();
+
+        // Find the highest threshold that the density meets or exceeds
+        for (int i = densityThresholds.Count - 1; i >= 0; i--)
+        {
+            if (density >= densityThresholds[i])
+            {
+                return densityColors[Mathf.Min(i, densityColors.Count - 1)];
+            }
+        }
+
+        return densityColors[0];
     }
 }
