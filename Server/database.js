@@ -1,7 +1,7 @@
 const sqlite = require("sqlite3");
 
 function createDatabase() {
-  return new sqlite.Database("database.db");
+  return new sqlite.Database("Server/database.db");
 }
 
 function initializeDatabase(db) {
