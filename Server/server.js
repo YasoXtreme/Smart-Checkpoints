@@ -11,12 +11,14 @@ const {
 } = require("./api-key-manager.js");
 const os = require("os");
 require("dotenv").config({ quiet: true });
+const path = require("path");
 
 const port = process.env.PORT || 3000;
 const app = express();
-const db = createDatabase();
+const db = createDatabase(path.join(__dirname, "database.db"));
 
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
 initializeDatabase(db);
 
 app.post("/create-project", async (req, res) => {
@@ -56,8 +58,6 @@ app.post("/create-connection", authenticateAPIKey(db), async (req, res) => {
   res.send({ connection_id: connectionId });
 });
 
-app.get("/testttt", async (req, res) => {});
-
 app.post("/report-passing", authenticateAPIKey(db), async (req, res) => {
   const projectId = req.projectId;
   const carPlate = req.body["car-plate"];
@@ -80,6 +80,11 @@ app.post("/report-passing", authenticateAPIKey(db), async (req, res) => {
   await statements.sightCar(projectId, carPlate, sightingTime, nodeId, db);
 
   res.send(violationData);
+});
+
+app.get("/list-projects", async (req, res) => {
+  const projects = await statements.listProjects(db);
+  res.send(projects);
 });
 
 app.listen(port);

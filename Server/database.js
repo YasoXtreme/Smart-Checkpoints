@@ -1,7 +1,7 @@
 const sqlite = require("sqlite3");
 
-function createDatabase() {
-  return new sqlite.Database("Server/database.db");
+function createDatabase(path = "Server/database.db") {
+  return new sqlite.Database(path);
 }
 
 function initializeDatabase(db) {
@@ -252,6 +252,18 @@ const statements = {
           resolve(row);
         },
       );
+    });
+  },
+  listProjects: (db) => {
+    return new Promise((resolve, reject) => {
+      db.all("SELECT * FROM projects", [], (err, rows) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        const names = rows.map((row) => row.project_name);
+        resolve(names);
+      });
     });
   },
 };
