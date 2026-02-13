@@ -335,6 +335,53 @@ console.log(
   `🎧 Listening on localhost:${port}\n📌 Local Network Path: ${getWifiAddress()}:${port}`,
 );
 
+// --- Congestion Broadcast Loop ---
+const CONGESTION_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+const CONGESTION_INTERVAL_MS = 3000; // every 3 seconds
+
+setInterval(async () => {
+  try {
+    // Prune old traversals
+    await statements.deleteOldTraversals(CONGESTION_WINDOW_MS, db);
+
+    // Find active project rooms
+    const rooms = io.sockets.adapter.rooms;
+    const projectRooms = new Set();
+    for (const [roomName] of rooms) {
+      const match = roomName.match(/^project-(\d+)$/);
+      if (match) projectRooms.add(parseInt(match[1]));
+    }
+
+    for (const projectId of projectRooms) {
+      const connections = await statements.getProjectConnections(projectId, db);
+      const congestionData = {};
+
+      for (const conn of connections) {
+        const traversals = await statements.getRecentTraversals(
+          conn.connection_id,
+          CONGESTION_WINDOW_MS,
+          db,
+        );
+        if (traversals.length === 0) continue;
+
+        const avgDeltaT =
+          traversals.reduce((sum, t) => sum + t.delta_t, 0) / traversals.length;
+        // T_legal in seconds: distance(m) / speed_limit(km/h) * 3.6
+        const tLegal = (conn.distance / conn.speed_limit) * 3.6;
+        if (tLegal > 0) {
+          congestionData[conn.connection_id] = avgDeltaT / tLegal;
+        }
+      }
+
+      if (Object.keys(congestionData).length > 0) {
+        io.to(`project-${projectId}`).emit("congestion-update", congestionData);
+      }
+    }
+  } catch (err) {
+    console.error("Congestion broadcast error:", err);
+  }
+}, CONGESTION_INTERVAL_MS);
+
 // --- Helpers ---
 function getWifiAddress() {
   const interfaces = os.networkInterfaces();
@@ -387,6 +434,14 @@ async function calculateViolation(carPlate, nodeId, sightingTime) {
   const carTransversalTime = calculateTimeDifferenceInSeconds(
     carData.last_sighting_time,
     sightingTime,
+  );
+
+  // Record this traversal for congestion tracking
+  await statements.recordTraversal(
+    connection.connection_id,
+    carTransversalTime,
+    sightingTime,
+    db,
   );
 
   const maximumTransversalTime =

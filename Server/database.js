@@ -55,6 +55,15 @@ function initializeDatabase(db) {
     )`);
 
     // Migration for existing databases
+    db.run(`CREATE TABLE IF NOT EXISTS traversals (
+        traversal_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+        connection_id INTEGER,
+        delta_t       REAL,
+        timestamp     TEXT,
+        FOREIGN KEY(connection_id) REFERENCES connections(connection_id)
+    )`);
+
+    // Migration for existing databases
     db.run(
       `ALTER TABLE projects ADD COLUMN node_count INTEGER DEFAULT 0`,
       () => {},
@@ -476,6 +485,47 @@ const statements = {
       } catch (err) {
         reject(err);
       }
+    });
+  },
+
+  recordTraversal: (connectionId, deltaT, timestamp, db) => {
+    return new Promise((resolve, reject) => {
+      db.run(
+        "INSERT INTO traversals (connection_id, delta_t, timestamp) VALUES (?, ?, ?)",
+        [connectionId, deltaT, typeof timestamp === "object" ? timestamp.toISOString() : timestamp],
+        function (err) {
+          if (err) reject(err);
+          else resolve(this.lastID);
+        },
+      );
+    });
+  },
+
+  getRecentTraversals: (connectionId, windowMs, db) => {
+    return new Promise((resolve, reject) => {
+      const cutoff = new Date(Date.now() - windowMs).toISOString();
+      db.all(
+        "SELECT delta_t FROM traversals WHERE connection_id = ? AND timestamp >= ?",
+        [connectionId, cutoff],
+        (err, rows) => {
+          if (err) reject(err);
+          else resolve(rows || []);
+        },
+      );
+    });
+  },
+
+  deleteOldTraversals: (windowMs, db) => {
+    return new Promise((resolve, reject) => {
+      const cutoff = new Date(Date.now() - windowMs).toISOString();
+      db.run(
+        "DELETE FROM traversals WHERE timestamp < ?",
+        [cutoff],
+        function (err) {
+          if (err) reject(err);
+          else resolve(this.changes);
+        },
+      );
     });
   },
 };

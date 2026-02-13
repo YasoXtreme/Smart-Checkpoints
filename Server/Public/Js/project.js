@@ -31,6 +31,11 @@
   const CYAN = "#19c4d8";
   const CANVAS_BG = "#d9d9d9";
   const EDGE_OFFSET = 8; // Perpendicular offset for bidirectional edges
+  const NO_DATA_COLOR = "#aaaaaa";
+
+  // Congestion state
+  const congestionTarget = {};  // connection_id -> target C value
+  const congestionDisplay = {}; // connection_id -> smoothly lerped display C
 
   // Preload arrow head image
   const arrowHeadImg = new Image();
@@ -108,6 +113,28 @@
 
   function getConnectionColor(index) {
     return CONNECTION_COLORS[index % CONNECTION_COLORS.length];
+  }
+
+  // --- Congestion Color Interpolation ---
+  function getCongestionColor(C) {
+    if (C === undefined || C === null) return NO_DATA_COLOR;
+    // Green (C<=1) -> Yellow (C=1.5) -> Red (C>=2)
+    if (C <= 1.0) return "hsl(130, 65%, 45%)";
+    if (C >= 2.0) return "hsl(0, 75%, 50%)";
+    if (C <= 1.5) {
+      // Green -> Yellow
+      const t = (C - 1.0) / 0.5;
+      const h = 130 + (45 - 130) * t;
+      const s = 65 + (95 - 65) * t;
+      const l = 45 + (50 - 45) * t;
+      return `hsl(${h}, ${s}%, ${l}%)`;
+    }
+    // Yellow -> Red
+    const t = (C - 1.5) / 0.5;
+    const h = 45 + (0 - 45) * t;
+    const s = 95 + (75 - 95) * t;
+    const l = 50;
+    return `hsl(${h}, ${s}%, ${l}%)`;
   }
 
   function distPointToSegment(px, py, x1, y1, x2, y2) {
@@ -249,7 +276,8 @@
 
       const isHovered = hoveredConnection === conn;
       const isSelected = selectedConnection === conn;
-      const color = getConnectionColor(i);
+      const cVal = congestionDisplay[conn.connection_id];
+      const color = getCongestionColor(cVal);
 
       let dx = toNode.x_coord - fromNode.x_coord;
       let dy = toNode.y_coord - fromNode.y_coord;
@@ -778,6 +806,31 @@
   socket.on("error", (data) => {
     console.error("Socket error:", data.message);
   });
+
+  socket.on("congestion-update", (data) => {
+    for (const [connId, cValue] of Object.entries(data)) {
+      congestionTarget[connId] = cValue;
+    }
+  });
+
+  // --- Congestion Smooth Lerp Loop ---
+  function lerpCongestion() {
+    let changed = false;
+    for (const connId of Object.keys(congestionTarget)) {
+      const target = congestionTarget[connId];
+      const current = congestionDisplay[connId];
+      if (current === undefined) {
+        congestionDisplay[connId] = target;
+        changed = true;
+      } else if (Math.abs(current - target) > 0.005) {
+        congestionDisplay[connId] = current + (target - current) * 0.12;
+        changed = true;
+      }
+    }
+    if (changed) draw();
+    requestAnimationFrame(lerpCongestion);
+  }
+  requestAnimationFrame(lerpCongestion);
 
   // --- Init ---
   loadProjectData();
