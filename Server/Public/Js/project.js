@@ -16,6 +16,7 @@
   // --- State ---
   let nodes = []; // { node_id, id_in_project, x_coord, y_coord }
   let connections = []; // { connection_id, from_node_id, to_node_id, distance, speed_limit }
+  let settingsScale = 1.0; // Scale multiplier for node positions
 
   const NODE_RADIUS = 28;
   const NODE_STROKE = 3.5;
@@ -183,7 +184,10 @@
       ctx.strokeStyle = "rgba(25, 196, 216, 0.6)";
       ctx.lineWidth = 2.5 / zoom;
       ctx.beginPath();
-      ctx.moveTo(dragFromNode.x_coord, dragFromNode.y_coord);
+      ctx.moveTo(
+        dragFromNode.x_coord * settingsScale,
+        dragFromNode.y_coord * settingsScale,
+      );
       ctx.lineTo(worldMouse.x, worldMouse.y);
       ctx.stroke();
       ctx.restore();
@@ -233,14 +237,26 @@
       // Flash glow
       if (hasFlash) {
         ctx.beginPath();
-        ctx.arc(node.x_coord, node.y_coord, NODE_RADIUS + 10, 0, Math.PI * 2);
+        ctx.arc(
+          node.x_coord * settingsScale,
+          node.y_coord * settingsScale,
+          NODE_RADIUS + 10,
+          0,
+          Math.PI * 2,
+        );
         ctx.fillStyle = `rgba(231, 76, 94, ${flash.alpha * 0.35})`;
         ctx.fill();
       }
 
       // Outer circle
       ctx.beginPath();
-      ctx.arc(node.x_coord, node.y_coord, NODE_RADIUS, 0, Math.PI * 2);
+      ctx.arc(
+        node.x_coord * settingsScale,
+        node.y_coord * settingsScale,
+        NODE_RADIUS,
+        0,
+        Math.PI * 2,
+      );
 
       // Fill — white normally, light blue on hover
       if (hasFlash) {
@@ -264,7 +280,11 @@
       ctx.font = `bold ${NODE_RADIUS * 0.75}px Inter, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(node.id_in_project, node.x_coord, node.y_coord + 1);
+      ctx.fillText(
+        node.id_in_project,
+        node.x_coord * settingsScale,
+        node.y_coord * settingsScale + 1,
+      );
 
       ctx.restore();
     }
@@ -282,8 +302,13 @@
       const cVal = congestionDisplay[conn.connection_id];
       const color = getCongestionColor(cVal);
 
-      let dx = toNode.x_coord - fromNode.x_coord;
-      let dy = toNode.y_coord - fromNode.y_coord;
+      const fX = fromNode.x_coord * settingsScale;
+      const fY = fromNode.y_coord * settingsScale;
+      const tX = toNode.x_coord * settingsScale;
+      const tY = toNode.y_coord * settingsScale;
+
+      let dx = tX - fX;
+      let dy = tY - fY;
       const len = Math.hypot(dx, dy);
       if (len === 0) continue;
 
@@ -299,10 +324,10 @@
       const offset = isBidi ? EDGE_OFFSET : 0;
 
       // Offset start and end points
-      const fromX = fromNode.x_coord + perpX * offset;
-      const fromY = fromNode.y_coord + perpY * offset;
-      const toX = toNode.x_coord + perpX * offset;
-      const toY = toNode.y_coord + perpY * offset;
+      const fromX = fX + perpX * offset;
+      const fromY = fY + perpY * offset;
+      const toX = tX + perpX * offset;
+      const toY = tY + perpY * offset;
 
       // Recalculate direction for offset line
       const odx = toX - fromX;
@@ -357,7 +382,10 @@
   function getNodeAt(wx, wy) {
     for (let i = nodes.length - 1; i >= 0; i--) {
       const n = nodes[i];
-      const dist = Math.hypot(wx - n.x_coord, wy - n.y_coord);
+      const dist = Math.hypot(
+        wx - n.x_coord * settingsScale,
+        wy - n.y_coord * settingsScale,
+      );
       if (dist <= NODE_RADIUS) return n;
     }
     return null;
@@ -371,9 +399,14 @@
       const toNode = getNodeById(conn.to_node_id);
       if (!fromNode || !toNode) continue;
 
+      const fX = fromNode.x_coord * settingsScale;
+      const fY = fromNode.y_coord * settingsScale;
+      const tX = toNode.x_coord * settingsScale;
+      const tY = toNode.y_coord * settingsScale;
+
       // Account for bidirectional offset
-      const dx = toNode.x_coord - fromNode.x_coord;
-      const dy = toNode.y_coord - fromNode.y_coord;
+      const dx = tX - fX;
+      const dy = tY - fY;
       const len = Math.hypot(dx, dy);
       if (len === 0) continue;
       const perpX = -(dy / len);
@@ -384,10 +417,10 @@
       const dist = distPointToSegment(
         wx,
         wy,
-        fromNode.x_coord + perpX * offset,
-        fromNode.y_coord + perpY * offset,
-        toNode.x_coord + perpX * offset,
-        toNode.y_coord + perpY * offset,
+        fX + perpX * offset,
+        fY + perpY * offset,
+        tX + perpX * offset,
+        tY + perpY * offset,
       );
       if (dist <= threshold) return conn;
     }
@@ -864,6 +897,48 @@
     requestAnimationFrame(lerpCongestion);
   }
   requestAnimationFrame(lerpCongestion);
+
+  // --- Settings Panel Logic ---
+  const settingsToggle = document.getElementById("settings-toggle");
+  const settingsPanel = document.getElementById("settings-panel");
+  const settingsClose = document.getElementById("settings-close");
+  const copyApiKeyBtn = document.getElementById("copy-api-key");
+  const apiKeyInput = document.getElementById("api-key-input");
+  const scaleSlider = document.getElementById("scale-slider");
+  const scaleVal = document.getElementById("scale-val");
+
+  // Populate API Key
+  if (apiKeyInput) apiKeyInput.value = apiKey;
+
+  if (settingsToggle) {
+    settingsToggle.addEventListener("click", () => {
+      settingsPanel.classList.toggle("open");
+      settingsToggle.classList.toggle("active");
+    });
+  }
+
+  if (settingsClose) {
+    settingsClose.addEventListener("click", () => {
+      settingsPanel.classList.remove("open");
+      settingsToggle.classList.remove("active");
+    });
+  }
+
+  if (copyApiKeyBtn) {
+    copyApiKeyBtn.addEventListener("click", () => {
+      apiKeyInput.select();
+      apiKeyInput.setSelectionRange(0, 99999); // For mobile devices
+      navigator.clipboard.writeText(apiKeyInput.value);
+    });
+  }
+
+  if (scaleSlider) {
+    scaleSlider.addEventListener("input", (e) => {
+      settingsScale = parseFloat(e.target.value);
+      if (scaleVal) scaleVal.textContent = settingsScale.toFixed(1);
+      draw();
+    });
+  }
 
   // --- Init ---
   loadProjectData();

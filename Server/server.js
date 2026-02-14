@@ -67,6 +67,8 @@ wss.on("connection", (ws) => {
         io.to(`project-${projectId}`).emit("distance-driver-status", {
           connected: true,
         });
+        // Recalculate all edge distances now that a driver is available
+        recalculateAllDistances(projectId);
       } catch {
         ws.send(JSON.stringify({ type: "error", message: "Invalid API key" }));
       }
@@ -92,6 +94,57 @@ wss.on("connection", (ws) => {
     }
   });
 });
+
+/**
+ * Recalculates distances for ALL connections in a project by requesting
+ * each one from the connected distance driver. Called automatically
+ * whenever a distance driver (re)connects.
+ */
+async function recalculateAllDistances(projectId) {
+  console.log(`📏 Recalculating all distances for project ${projectId}...`);
+  try {
+    const connections = await statements.getProjectConnections(projectId, db);
+    const results = await Promise.allSettled(
+      connections.map(async (conn) => {
+        const fromNode = await statements.getNodeByNodeId(
+          conn.from_node_id,
+          db,
+        );
+        const toNode = await statements.getNodeByNodeId(conn.to_node_id, db);
+        if (!fromNode || !toNode) return;
+
+        const distance = await requestDistanceFromDriver(
+          projectId,
+          fromNode.id_in_project,
+          toNode.id_in_project,
+        );
+        await statements.updateConnection(
+          conn.connection_id,
+          distance,
+          conn.speed_limit,
+          db,
+        );
+        io.to(`project-${projectId}`).emit("connection-updated", {
+          connection_id: conn.connection_id,
+          distance,
+          speed_limit: conn.speed_limit,
+        });
+        console.log(
+          `📏 Updated connection ${conn.connection_id}: distance=${distance}`,
+        );
+      }),
+    );
+    const failed = results.filter((r) => r.status === "rejected");
+    if (failed.length > 0) {
+      console.warn(
+        `📏 ${failed.length}/${results.length} distance recalculations failed`,
+      );
+    }
+    console.log(`📏 Finished recalculating distances for project ${projectId}`);
+  } catch (err) {
+    console.error(`📏 Error recalculating distances: ${err.message}`);
+  }
+}
 
 function isDistanceDriverConnected(projectId) {
   const ws = distanceDrivers[projectId];
@@ -332,7 +385,11 @@ app.post("/report-checkpoint", authenticateAPIKey(db), async (req, res) => {
       timestamp: sightingTime,
     });
   }
-  await statements.sightCar(projectId, carPlate, sightingTime, nodeId, db);
+  // Only update the stored sighting when the request is not out-of-order;
+  // otherwise we would overwrite a newer timestamp with an older one.
+  if (!violationData.outOfOrder) {
+    await statements.sightCar(projectId, carPlate, sightingTime, nodeId, db);
+  }
 
   io.to(`project-${projectId}`).emit("node-triggered", {
     id_in_project: idInProject,
@@ -609,6 +666,21 @@ async function calculateViolation(carPlate, nodeId, sightingTime) {
     carData.last_sighting_time,
     sightingTime,
   );
+
+  // Guard against out-of-order HTTP requests: if the traversal time is
+  // non-positive the current request arrived after a later one was already
+  // processed, so we must ignore it entirely.
+  if (carTransversalTime <= 0) {
+    return {
+      status: false,
+      carSpeed: 0,
+      legalLimit: connection.speed_limit,
+      timestamp: sightingTime,
+      nodeId,
+      carPlate,
+      outOfOrder: true,
+    };
+  }
 
   // Record this traversal for congestion tracking
   await statements.recordTraversal(

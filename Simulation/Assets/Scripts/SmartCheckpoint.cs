@@ -18,6 +18,11 @@ public class SmartCheckpoint : MonoBehaviour
     private Quaternion lockedRotation;
     private Vector3 lockedScale;
 
+    // Time-based cooldown per car to prevent all forms of duplicate trigger events.
+    // Keyed by CarPassport instance ID → last report time.
+    private Dictionary<int, float> reportCooldowns = new Dictionary<int, float>();
+    private const float REPORT_COOLDOWN = 2f;
+
     private void Awake()
     {
         meshRenderer = GetComponent<MeshRenderer>();
@@ -132,31 +137,45 @@ public class SmartCheckpoint : MonoBehaviour
         CarPassport passport = other.GetComponent<CarPassport>();
         if (passport == null) passport = other.GetComponentInParent<CarPassport>();
 
-        if (passport != null)
-        {
-            // Notify the CarAgent about checkpoint passage (for route navigation)
-            CarAgent agent = passport.GetComponent<CarAgent>();
-            if (agent != null)
-            {
-                agent.OnCheckpointPassed(this);
-            }
+        if (passport == null) return;
 
-            // Report to server for speed violation detection
-            if (ServerManager.Instance != null &&
-                !string.IsNullOrEmpty(ServerManager.Instance.apiKey))
-            {
-                ServerManager.Instance.ReportCheckpoint(
-                    passport.licensePlate,
-                    this.checkpointID,
-                    (isViolation, carSpeed) =>
+        int passportId = passport.GetInstanceID();
+
+        // Time-based cooldown: block all duplicate triggers from multi-collider cars
+        // and physics jitter within the cooldown window.
+        if (reportCooldowns.TryGetValue(passportId, out float lastTime) &&
+            Time.time - lastTime < REPORT_COOLDOWN) return;
+
+        // Prevent re-reporting if this car's last checkpoint is already this one.
+        if (passport.lastCheckpointID == this.checkpointID) return;
+
+        reportCooldowns[passportId] = Time.time;
+
+        // Notify the CarAgent about checkpoint passage (for route navigation)
+        CarAgent agent = passport.GetComponent<CarAgent>();
+        if (agent != null)
+        {
+            agent.OnCheckpointPassed(this);
+        }
+
+        // Update the passport's last checkpoint tracking
+        passport.lastCheckpointID = this.checkpointID;
+
+        // Report to server for speed violation detection
+        if (ServerManager.Instance != null &&
+            !string.IsNullOrEmpty(ServerManager.Instance.apiKey))
+        {
+            ServerManager.Instance.ReportCheckpoint(
+                passport.licensePlate,
+                this.checkpointID,
+                (isViolation, carSpeed) =>
+                {
+                    if (isViolation)
                     {
-                        if (isViolation)
-                        {
-                            passport.MarkAsSpeeder();
-                        }
+                        passport.MarkAsSpeeder();
                     }
-                );
-            }
+                }
+            );
         }
     }
 

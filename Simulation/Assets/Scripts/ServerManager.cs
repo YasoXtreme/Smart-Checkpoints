@@ -71,8 +71,8 @@ public class ServerManager : MonoBehaviour
     // ============================================================
 
     /// <summary>
-    /// Sends a create-node request to the server with the checkpoint's world coordinates.
-    /// Unity X → server x-coord, Unity Z → server y-coord (top-down 2D projection).
+    /// Sends a create-node request to the server with the checkpoint's camera-projected coordinates.
+    /// Coordinates are projected onto the camera's view plane so they match the perceived 2D layout.
     /// </summary>
     public void CreateNode(Vector3 worldPosition, Action<int> onIdInProjectReceived = null)
     {
@@ -82,7 +82,15 @@ public class ServerManager : MonoBehaviour
     private IEnumerator CreateNodeCoroutine(Vector3 worldPos, Action<int> onComplete)
     {
         string url = $"{serverHost}/create-node";
-        string json = $"{{\"x-coord\":{worldPos.x},\"y-coord\":{worldPos.z}}}";
+
+        // Project world position onto the camera's view plane.
+        // For an orthographic camera, dot-product onto right/up axes gives
+        // the perceived 2D position independent of camera pan/zoom.
+        Camera cam = Camera.main;
+        float xCoord = Vector3.Dot(worldPos, cam.transform.right);
+        float yCoord = Vector3.Dot(worldPos, cam.transform.up);
+
+        string json = $"{{\"x-coord\":{xCoord.ToString(System.Globalization.CultureInfo.InvariantCulture)},\"y-coord\":{yCoord.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}";
 
         using (UnityWebRequest req = new UnityWebRequest(url, "POST"))
         {
@@ -112,7 +120,7 @@ public class ServerManager : MonoBehaviour
     // ============================================================
 
     /// <summary>
-    /// Reports a car passing a checkpoint to the server. Timestamp is left to the server.
+    /// Reports a car passing a checkpoint to the server with the simulation's own timestamp.
     /// Returns violation data via callback.
     /// </summary>
     public void ReportCheckpoint(string carPlate, int idInProject, Action<bool, float> onResult)
@@ -123,7 +131,11 @@ public class ServerManager : MonoBehaviour
     private IEnumerator ReportCheckpointCoroutine(string carPlate, int idInProject, Action<bool, float> onResult)
     {
         string url = $"{serverHost}/report-checkpoint";
-        string json = $"{{\"car-plate\":\"{carPlate}\",\"id-in-project\":{idInProject}}}";
+
+        // Send the simulation's own wall-clock timestamp so speed calculations
+        // are not affected by network latency.
+        long timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        string json = $"{{\"car-plate\":\"{carPlate}\",\"id-in-project\":{idInProject},\"timestamp\":{timestamp}}}";
 
         using (UnityWebRequest req = new UnityWebRequest(url, "POST"))
         {

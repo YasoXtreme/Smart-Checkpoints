@@ -1,7 +1,11 @@
 const sqlite = require("sqlite3");
 
 function createDatabase(path = "Server/database.db") {
-  return new sqlite.Database(path);
+  const db = new sqlite.Database(path);
+  // Enable WAL mode for better concurrency under high write load
+  db.run("PRAGMA journal_mode = WAL");
+  db.run("PRAGMA busy_timeout = 5000");
+  return db;
 }
 
 function initializeDatabase(db) {
@@ -256,19 +260,25 @@ const statements = {
     newSightingNodeId,
     db,
   ) => {
-    const isRegistered = await isCarPlateRegistered(projectId, carPlate);
+    const isRegistered = await isCarPlateRegistered(projectId, carPlate, db);
     const carId = isRegistered
       ? await carPlateToCarId(projectId, carPlate, db)
       : await registerCarPlate(projectId, carPlate, db);
 
+    // Only update if the new timestamp is actually newer than what is stored,
+    // preventing out-of-order HTTP requests from overwriting a later sighting.
     db.run(
-      "UPDATE car_data SET last_sighting_time = ?, last_sighting_node_id = ? WHERE car_id = ?",
-      [newSightingTime, newSightingNodeId, carId],
+      `UPDATE car_data
+       SET last_sighting_time = ?, last_sighting_node_id = ?
+       WHERE car_id = ? AND (last_sighting_time IS NULL OR last_sighting_time < ?)`,
+      [newSightingTime, newSightingNodeId, carId, newSightingTime],
       function (err) {
         if (err) {
           console.error(err.message);
         }
-        console.log(`Car ${this.lastID} is on ${newSightingNodeId}`);
+        if (this.changes > 0) {
+          console.log(`Car ${carId} is on ${newSightingNodeId}`);
+        }
       },
     );
   },
