@@ -385,7 +385,7 @@ setInterval(async () => {
 // --- Helpers ---
 function getWifiAddress() {
   const interfaces = os.networkInterfaces();
-  const adapterName = "Wi-Fi 2";
+  const adapterName = process.env.WIFI_ADAPTER_NAME;
 
   if (interfaces[adapterName]) {
     for (const info of interfaces[adapterName]) {

@@ -21,6 +21,6 @@
 }
 
 .custom-cursor.is-hovering {
-  transform: scale(1.2) rotate(5deg);
+  transform: scale(1.2) rotate(10deg);
   filter: drop-shadow(0px 4px 8px #19c4d8);
 }
