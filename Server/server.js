@@ -14,11 +14,116 @@ require("dotenv").config({ quiet: true });
 const path = require("path");
 const http = require("http");
 const { Server } = require("socket.io");
+const WebSocket = require("ws");
+const crypto = require("crypto");
 
 const port = process.env.PORT || 3000;
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// --- Distance Driver WebSocket ---
+const wss = new WebSocket.Server({ noServer: true });
+const distanceDrivers = {}; // projectId -> WebSocket
+const pendingDistanceRequests = {}; // requestId -> { resolve, reject, timeout }
+
+server.on("upgrade", (request, socket, head) => {
+  const url = new URL(request.url, `http://${request.headers.host}`);
+  if (url.pathname === "/distance-driver") {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit("connection", ws, request);
+    });
+  } else {
+    // Let Socket.IO handle its own upgrades
+    // Do nothing here — Socket.IO hooks into the server internally
+  }
+});
+
+wss.on("connection", (ws) => {
+  console.log("🔗 Distance driver WebSocket connected");
+  ws.isAuthenticated = false;
+  ws.projectId = null;
+
+  ws.on("message", async (raw) => {
+    let msg;
+    try {
+      msg = JSON.parse(raw);
+    } catch {
+      ws.send(JSON.stringify({ type: "error", message: "Invalid JSON" }));
+      return;
+    }
+
+    if (msg.type === "auth") {
+      try {
+        const projectId = await APIKeyToProjectId(msg.apiKey, db);
+        ws.isAuthenticated = true;
+        ws.projectId = projectId;
+        distanceDrivers[projectId] = ws;
+        ws.send(JSON.stringify({ type: "authenticated", projectId }));
+        console.log(
+          `🔗 Distance driver authenticated for project ${projectId}`,
+        );
+        // Notify web clients
+        io.to(`project-${projectId}`).emit("distance-driver-status", {
+          connected: true,
+        });
+      } catch {
+        ws.send(JSON.stringify({ type: "error", message: "Invalid API key" }));
+      }
+    } else if (msg.type === "distance-result") {
+      const pending = pendingDistanceRequests[msg.requestId];
+      if (pending) {
+        clearTimeout(pending.timeout);
+        delete pendingDistanceRequests[msg.requestId];
+        pending.resolve(msg.distance);
+      }
+    }
+  });
+
+  ws.on("close", () => {
+    if (ws.projectId && distanceDrivers[ws.projectId] === ws) {
+      delete distanceDrivers[ws.projectId];
+      console.log(
+        `🔗 Distance driver disconnected from project ${ws.projectId}`,
+      );
+      io.to(`project-${ws.projectId}`).emit("distance-driver-status", {
+        connected: false,
+      });
+    }
+  });
+});
+
+function isDistanceDriverConnected(projectId) {
+  const ws = distanceDrivers[projectId];
+  return ws && ws.readyState === WebSocket.OPEN;
+}
+
+function requestDistanceFromDriver(projectId, fromIdInProject, toIdInProject) {
+  return new Promise((resolve, reject) => {
+    const ws = distanceDrivers[projectId];
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      reject(new Error("No distance driver connected"));
+      return;
+    }
+
+    const requestId = crypto.randomUUID();
+    const timeout = setTimeout(() => {
+      delete pendingDistanceRequests[requestId];
+      reject(new Error("Distance calculation timed out"));
+    }, 30000);
+
+    pendingDistanceRequests[requestId] = { resolve, reject, timeout };
+
+    ws.send(
+      JSON.stringify({
+        type: "calculate-distance",
+        requestId,
+        fromIdInProject,
+        toIdInProject,
+      }),
+    );
+  });
+}
 
 const db = createDatabase(path.join(__dirname, "database.db"));
 
@@ -72,6 +177,7 @@ app.post("/create-node", authenticateAPIKey(db), async (req, res) => {
     const projectId = req.projectId;
     const xCoord = req.body["x-coord"];
     const yCoord = req.body["y-coord"];
+    const zCoord = req.body["z-coord"]; // Optional 3D coordinate
 
     const result = await statements.createNode(projectId, xCoord, yCoord, db);
 
@@ -97,28 +203,58 @@ app.post("/create-connection", authenticateAPIKey(db), async (req, res) => {
   const projectId = req.projectId;
   const fromNodeId = req.body["from-node-id"];
   const toNodeId = req.body["to-node-id"];
-  const distance = req.body["distance"];
+  let distance = req.body["distance"];
   const speedLimit = req.body["speed-limit"];
 
-  const connectionId = await statements.createConnection(
-    projectId,
-    fromNodeId,
-    toNodeId,
-    distance,
-    speedLimit,
-    db,
-  );
+  try {
+    // If no distance provided and distance driver is connected, request it
+    if (
+      (distance === undefined || distance === null) &&
+      isDistanceDriverConnected(projectId)
+    ) {
+      const fromNode = await statements.getNodeByNodeId(fromNodeId, db);
+      const toNode = await statements.getNodeByNodeId(toNodeId, db);
+      if (fromNode && toNode) {
+        try {
+          distance = await requestDistanceFromDriver(
+            projectId,
+            fromNode.id_in_project,
+            toNode.id_in_project,
+          );
+        } catch (err) {
+          console.error("Distance driver request failed:", err.message);
+          distance = 0;
+        }
+      } else {
+        distance = 0;
+      }
+    }
 
-  // Emit to connected clients
-  io.to(`project-${projectId}`).emit("connection-added", {
-    connection_id: connectionId,
-    from_node_id: fromNodeId,
-    to_node_id: toNodeId,
-    distance,
-    speed_limit: speedLimit,
-  });
+    if (distance === undefined || distance === null) distance = 0;
 
-  res.send({ connection_id: connectionId });
+    const connectionId = await statements.createConnection(
+      projectId,
+      fromNodeId,
+      toNodeId,
+      distance,
+      speedLimit,
+      db,
+    );
+
+    // Emit to connected clients
+    io.to(`project-${projectId}`).emit("connection-added", {
+      connection_id: connectionId,
+      from_node_id: fromNodeId,
+      to_node_id: toNodeId,
+      distance,
+      speed_limit: speedLimit,
+    });
+
+    res.send({ connection_id: connectionId });
+  } catch (err) {
+    console.error("Error creating connection:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/project/:id/nodes", authenticateAPIKey(db), async (req, res) => {
@@ -247,6 +383,16 @@ app.post("/admin/auth", (req, res) => {
   }
 });
 
+// --- Distance Driver Status ---
+app.get(
+  "/project/:id/distance-driver-status",
+  authenticateAPIKey(db),
+  (req, res) => {
+    const projectId = parseInt(req.params.id);
+    res.json({ connected: isDistanceDriverConnected(projectId) });
+  },
+);
+
 app.get("/admin/projects", async (req, res) => {
   // Simple password check via header
   const password = req.headers["x-admin-password"];
@@ -275,6 +421,10 @@ io.on("connection", (socket) => {
       socket.apiKey = apiKey;
       console.log(`🏠 Socket ${socket.id} joined room ${room}`);
       socket.emit("joined", { project_id: projectId });
+      // Send current distance driver status
+      socket.emit("distance-driver-status", {
+        connected: isDistanceDriverConnected(projectId),
+      });
     } catch (err) {
       socket.emit("error", { message: "Invalid API key" });
     }
@@ -282,8 +432,32 @@ io.on("connection", (socket) => {
 
   socket.on("create-connection", async (data) => {
     if (!socket.projectId) return;
-    const { from_node_id, to_node_id, distance, speed_limit } = data;
+    let { from_node_id, to_node_id, distance, speed_limit } = data;
     try {
+      // If no distance and distance driver is connected, request it
+      if (
+        (distance === undefined || distance === null) &&
+        isDistanceDriverConnected(socket.projectId)
+      ) {
+        const fromNode = await statements.getNodeByNodeId(from_node_id, db);
+        const toNode = await statements.getNodeByNodeId(to_node_id, db);
+        if (fromNode && toNode) {
+          try {
+            distance = await requestDistanceFromDriver(
+              socket.projectId,
+              fromNode.id_in_project,
+              toNode.id_in_project,
+            );
+          } catch (err) {
+            console.error("Distance driver request failed:", err.message);
+            distance = 0;
+          }
+        } else {
+          distance = 0;
+        }
+      }
+      if (distance === undefined || distance === null) distance = 0;
+
       const connectionId = await statements.createConnection(
         socket.projectId,
         from_node_id,

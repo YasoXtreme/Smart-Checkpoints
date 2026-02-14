@@ -134,17 +134,28 @@ public class SmartCheckpoint : MonoBehaviour
 
         if (passport != null)
         {
-            // Notify the CarAgent about checkpoint passage
+            // Notify the CarAgent about checkpoint passage (for route navigation)
             CarAgent agent = passport.GetComponent<CarAgent>();
             if (agent != null)
             {
                 agent.OnCheckpointPassed(this);
             }
 
-            // Report to network for speed violation detection
-            if (CheckpointNetwork.Instance != null)
+            // Report to server for speed violation detection
+            if (ServerManager.Instance != null &&
+                !string.IsNullOrEmpty(ServerManager.Instance.apiKey))
             {
-                CheckpointNetwork.Instance.ReportCheckpointPass(passport, this.checkpointID);
+                ServerManager.Instance.ReportCheckpoint(
+                    passport.licensePlate,
+                    this.checkpointID,
+                    (isViolation, carSpeed) =>
+                    {
+                        if (isViolation)
+                        {
+                            passport.MarkAsSpeeder();
+                        }
+                    }
+                );
             }
         }
     }

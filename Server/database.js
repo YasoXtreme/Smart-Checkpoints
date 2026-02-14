@@ -72,10 +72,7 @@ function initializeDatabase(db) {
       `ALTER TABLE projects ADD COLUMN connection_count INTEGER DEFAULT 0`,
       () => {},
     );
-    db.run(
-      `ALTER TABLE nodes ADD COLUMN id_in_project INTEGER`,
-      () => {},
-    );
+    db.run(`ALTER TABLE nodes ADD COLUMN id_in_project INTEGER`, () => {});
   });
 }
 
@@ -415,6 +412,15 @@ const statements = {
     });
   },
 
+  getNodeByNodeId: (nodeId, db) => {
+    return new Promise((resolve, reject) => {
+      db.get("SELECT * FROM nodes WHERE node_id = ?", [nodeId], (err, row) => {
+        if (err) reject(err);
+        else resolve(row || null);
+      });
+    });
+  },
+
   getProjectViolations: (projectId, db) => {
     return new Promise((resolve, reject) => {
       db.all(
@@ -448,14 +454,14 @@ const statements = {
           db.all(
             "SELECT id_in_project, x_coord, y_coord FROM nodes WHERE project_id = ?",
             [projectId],
-            (err, rows) => err ? rej(err) : res(rows || [])
+            (err, rows) => (err ? rej(err) : res(rows || [])),
           );
         });
         const connections = await new Promise((res, rej) => {
           db.all(
             "SELECT from_node_id, to_node_id FROM connections WHERE project_id = ?",
             [projectId],
-            (err, rows) => err ? rej(err) : res(rows || [])
+            (err, rows) => (err ? rej(err) : res(rows || [])),
           );
         });
         // Map from_node_id/to_node_id to id_in_project for client
@@ -472,14 +478,14 @@ const statements = {
             (err, rows) => {
               if (err) rej(err);
               const map = {};
-              for (const r of (rows || [])) map[r.node_id] = r.id_in_project;
+              for (const r of rows || []) map[r.node_id] = r.id_in_project;
               res(map);
-            }
+            },
           );
         });
-        const connsOut = connections.map(c => ({
+        const connsOut = connections.map((c) => ({
           from: nodeIdMap[c.from_node_id],
-          to: nodeIdMap[c.to_node_id]
+          to: nodeIdMap[c.to_node_id],
         }));
         resolve({ nodes: nodesOut, connections: connsOut });
       } catch (err) {
@@ -492,7 +498,11 @@ const statements = {
     return new Promise((resolve, reject) => {
       db.run(
         "INSERT INTO traversals (connection_id, delta_t, timestamp) VALUES (?, ?, ?)",
-        [connectionId, deltaT, typeof timestamp === "object" ? timestamp.toISOString() : timestamp],
+        [
+          connectionId,
+          deltaT,
+          typeof timestamp === "object" ? timestamp.toISOString() : timestamp,
+        ],
         function (err) {
           if (err) reject(err);
           else resolve(this.lastID);

@@ -239,6 +239,13 @@ public class CheckpointBuilder : MonoBehaviour
             }
         }
 
+        // Send create-node request to server
+        if (ServerManager.Instance != null &&
+            !string.IsNullOrEmpty(ServerManager.Instance.apiKey))
+        {
+            ServerManager.Instance.CreateNode(ghostObj.transform.position);
+        }
+
         currentCheckpointID++;
         Debug.Log($"[CheckpointBuilder] Placed Checkpoint_{checkpoint.checkpointID} with {detectedWaypoints.Count} anchor waypoints.");
     }

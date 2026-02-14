@@ -5,55 +5,47 @@ using UnityEngine.Video;
 
 public class UIManager : MonoBehaviour
 {
-    public enum AppState { Welcome, Loading, Software, Simulation }
+    public enum AppState { Welcome, Loading, Simulation }
 
     [Header("Current State")]
     public AppState currentState = AppState.Welcome;
-    private AppState pendingState; // State to transition to after loading
-    private bool simulationCreated = false;
     private bool isTransitioning = false;
 
     [Header("UI Canvases")]
-    public Canvas welcomeCanvas;     // "Press Enter to start software" screen
+    public Canvas welcomeCanvas;     // "Press Enter to start" screen
     public Canvas loadingCanvas;     // Contains video player
-    public Canvas softwareCanvas;    // Graph editor UI (controlled by GraphUIEditor)
 
     [Header("Fade Overlay")]
     public CanvasGroup fadeOverlay;  // Full-screen black panel for fades
     public float fadeDuration = 0.5f;
 
-    [Header("Create Simulation UI")]
-    public GameObject dropdownPanel;          // Dropdown container
-    public Button createSimulationButton;     // "Create New Simulation" button
-    public Text connectionStatusText;         // "Connected to: Simulation" text
+    [Header("Server Settings Modal")]
+    public GameObject settingsModal;         // The modal panel
+    public InputField serverHostInput;       // Server host input field
+    public InputField apiKeyInput;           // API key input field
+    public Button connectDriverButton;       // "Connect Distance Driver" button
+    public Text driverStatusText;            // Shows connection status
 
     [Header("Video Player")]
     public VideoPlayer loadingVideoPlayer;
     public RawImage videoDisplay;             // Display for video (uses RenderTexture)
 
     [Header("References")]
-    public GraphUIEditor graphUIEditor;
     public CarSpawner carSpawner;
+
+    private bool settingsModalOpen = false;
 
     void Start()
     {
         // Initialize all canvases to correct state
         SetCanvasState(welcomeCanvas, true);
         SetCanvasState(loadingCanvas, false);
-        SetCanvasState(softwareCanvas, false);
 
         // Initialize fade overlay (fully transparent)
         if (fadeOverlay != null)
         {
             fadeOverlay.alpha = 0f;
             fadeOverlay.blocksRaycasts = false;
-        }
-
-        // Initialize create simulation UI
-        if (connectionStatusText != null) connectionStatusText.gameObject.SetActive(false);
-        if (createSimulationButton != null)
-        {
-            createSimulationButton.onClick.AddListener(OnCreateSimulationClicked);
         }
 
         // Ensure simulation is not running at start
@@ -65,6 +57,31 @@ public class UIManager : MonoBehaviour
             loadingVideoPlayer.Stop();
             loadingVideoPlayer.playOnAwake = false;
         }
+
+        // Initialize settings modal
+        if (settingsModal != null) settingsModal.SetActive(false);
+
+        // Load saved settings
+        if (serverHostInput != null)
+            serverHostInput.text = PlayerPrefs.GetString("ServerHost", "http://localhost:3000");
+        if (apiKeyInput != null)
+            apiKeyInput.text = PlayerPrefs.GetString("APIKey", "");
+
+        // Setup button listener
+        if (connectDriverButton != null)
+            connectDriverButton.onClick.AddListener(OnConnectDriverClicked);
+
+        // Subscribe to distance driver status
+        if (ServerManager.Instance != null)
+            ServerManager.Instance.OnDistanceDriverStatusChanged += OnDriverStatusChanged;
+
+        UpdateDriverStatusText();
+    }
+
+    void OnDestroy()
+    {
+        if (ServerManager.Instance != null)
+            ServerManager.Instance.OnDistanceDriverStatusChanged -= OnDriverStatusChanged;
     }
 
     void Update()
@@ -76,84 +93,28 @@ public class UIManager : MonoBehaviour
             case AppState.Welcome:
                 if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
                 {
-                    StartCoroutine(TransitionWithLoading(AppState.Software));
+                    StartCoroutine(TransitionToSimulation());
                 }
                 break;
 
-            case AppState.Software:
             case AppState.Simulation:
-                if (Input.GetKeyDown(KeyCode.Tab) && simulationCreated)
+                if (Input.GetKeyDown(KeyCode.Tab))
                 {
-                    ToggleSoftwareSimulation();
+                    ToggleSettingsModal();
                 }
                 break;
         }
     }
 
     /// <summary>
-    /// Called when "Create New Simulation" button is clicked
+    /// Transition from Welcome directly to Simulation with loading video
     /// </summary>
-    public void OnCreateSimulationClicked()
-    {
-        if (simulationCreated || isTransitioning) return;
-
-        StartCoroutine(CreateSimulationSequence());
-    }
-
-    IEnumerator CreateSimulationSequence()
+    IEnumerator TransitionToSimulation()
     {
         isTransitioning = true;
-        simulationCreated = true;
 
-        // Update UI: hide button, show connection status
-        if (createSimulationButton != null) createSimulationButton.gameObject.SetActive(false);
-        if (connectionStatusText != null)
-        {
-            connectionStatusText.text = "Connected to: Simulation";
-            connectionStatusText.gameObject.SetActive(true);
-        }
-
-        // Close dropdown panel
-        if (dropdownPanel != null) dropdownPanel.SetActive(false);
-
-        // Fade out software
-        yield return StartCoroutine(FadeToBlack());
-
-        // Hide software canvas
-        if (graphUIEditor != null) graphUIEditor.CloseSoftware();
-        SetCanvasState(softwareCanvas, false);
-
-        // Show loading and play video
-        SetCanvasState(loadingCanvas, true);
-        yield return StartCoroutine(FadeFromBlack());
-
-        // Reset and play video
-        PrepareAndPlayVideo();
-        yield return StartCoroutine(WaitForVideoEnd());
-
-        // Fade to black
-        yield return StartCoroutine(FadeToBlack());
-
-        // Hide loading, show simulation
-        SetCanvasState(loadingCanvas, false);
-        currentState = AppState.Simulation;
-
-        // Start the simulation (cars begin moving)
-        if (carSpawner != null) carSpawner.StartSimulation();
-
-        // Fade in to simulation
-        yield return StartCoroutine(FadeFromBlack());
-
-        isTransitioning = false;
-    }
-
-    /// <summary>
-    /// Transition from Welcome to Software with loading video
-    /// </summary>
-    IEnumerator TransitionWithLoading(AppState targetState)
-    {
-        isTransitioning = true;
-        pendingState = targetState;
+        // Apply saved server settings before starting
+        ApplyServerSettings();
 
         // Fade out welcome screen
         yield return StartCoroutine(FadeToBlack());
@@ -175,72 +136,85 @@ public class UIManager : MonoBehaviour
         // Hide loading canvas
         SetCanvasState(loadingCanvas, false);
 
-        // Show target state
-        if (pendingState == AppState.Software)
-        {
-            SetCanvasState(softwareCanvas, true);
-            if (graphUIEditor != null) graphUIEditor.OpenSoftware();
-        }
+        currentState = AppState.Simulation;
 
-        currentState = pendingState;
+        // Start the simulation (cars begin moving)
+        if (carSpawner != null) carSpawner.StartSimulation();
 
-        // Fade from black
+        // Fade in to simulation
         yield return StartCoroutine(FadeFromBlack());
 
         isTransitioning = false;
     }
 
-    /// <summary>
-    /// Toggle between Software and Simulation with simple fade (no loading video)
-    /// </summary>
-    void ToggleSoftwareSimulation()
+    // --- SETTINGS MODAL ---
+
+    void ToggleSettingsModal()
     {
-        if (currentState == AppState.Software)
+        Debug.Log(settingsModal == null);
+        settingsModalOpen = !settingsModalOpen;
+        if (settingsModal != null) settingsModal.SetActive(settingsModalOpen);
+
+        if (!settingsModalOpen)
         {
-            StartCoroutine(FadeSwitchTo(AppState.Simulation));
-        }
-        else if (currentState == AppState.Simulation)
-        {
-            StartCoroutine(FadeSwitchTo(AppState.Software));
+            // Save and apply settings when closing
+            ApplyServerSettings();
         }
     }
 
-    IEnumerator FadeSwitchTo(AppState targetState)
+    void ApplyServerSettings()
     {
-        isTransitioning = true;
-
-        // Fade to black
-        yield return StartCoroutine(FadeToBlack());
-
-        // Hide current state
-        if (currentState == AppState.Software)
+        if (ServerManager.Instance != null)
         {
-            if (graphUIEditor != null) graphUIEditor.CloseSoftware();
-            SetCanvasState(softwareCanvas, false);
+            if (serverHostInput != null)
+            {
+                ServerManager.Instance.serverHost = serverHostInput.text;
+                PlayerPrefs.SetString("ServerHost", serverHostInput.text);
+            }
+            if (apiKeyInput != null)
+            {
+                ServerManager.Instance.apiKey = apiKeyInput.text;
+                PlayerPrefs.SetString("APIKey", apiKeyInput.text);
+            }
+            PlayerPrefs.Save();
         }
-        else if (currentState == AppState.Simulation)
+    }
+
+    void OnConnectDriverClicked()
+    {
+        ApplyServerSettings();
+
+        if (ServerManager.Instance == null) return;
+
+        if (ServerManager.Instance.isDistanceDriverConnected)
         {
-            // Simulation view doesn't have a specific canvas to hide
-            // Just update state
+            ServerManager.Instance.DisconnectDistanceDriver();
         }
-
-        // Show target state
-        if (targetState == AppState.Software)
+        else
         {
-            SetCanvasState(softwareCanvas, true);
-            if (graphUIEditor != null) graphUIEditor.OpenSoftware();
+            ServerManager.Instance.ConnectDistanceDriver();
         }
-        else if (targetState == AppState.Simulation)
+    }
+
+    void OnDriverStatusChanged(bool connected)
+    {
+        UpdateDriverStatusText();
+    }
+
+    void UpdateDriverStatusText()
+    {
+        if (driverStatusText == null) return;
+
+        bool connected = ServerManager.Instance != null && ServerManager.Instance.isDistanceDriverConnected;
+        driverStatusText.text = connected ? "Distance Driver: Connected" : "Distance Driver: Disconnected";
+        driverStatusText.color = connected ? Color.green : Color.gray;
+
+        if (connectDriverButton != null)
         {
-            // Simulation view - software canvas is hidden, simulation runs in background
+            Text btnText = connectDriverButton.GetComponentInChildren<Text>();
+            if (btnText != null)
+                btnText.text = connected ? "Disconnect Driver" : "Connect Distance Driver";
         }
-
-        currentState = targetState;
-
-        // Fade from black
-        yield return StartCoroutine(FadeFromBlack());
-
-        isTransitioning = false;
     }
 
     // --- VIDEO PLAYER METHODS ---

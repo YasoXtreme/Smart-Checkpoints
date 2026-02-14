@@ -34,7 +34,7 @@
   const NO_DATA_COLOR = "#aaaaaa";
 
   // Congestion state
-  const congestionTarget = {};  // connection_id -> target C value
+  const congestionTarget = {}; // connection_id -> target C value
   const congestionDisplay = {}; // connection_id -> smoothly lerped display C
 
   // Preload arrow head image
@@ -66,6 +66,9 @@
 
   // Selected connection for editing
   let selectedConnection = null;
+
+  // Distance driver state
+  let distanceDriverConnected = false;
 
   // --- Canvas Setup ---
   const canvas = document.getElementById("project-canvas");
@@ -551,6 +554,7 @@
     selectedConnection = conn;
     editDistance.value = conn.distance || "";
     editSpeedLimit.value = conn.speed_limit || "";
+    editDistance.disabled = distanceDriverConnected;
     editorPanel.classList.remove("hidden");
     draw();
   }
@@ -604,24 +608,38 @@
     pendingToNode = to;
     newConnSubtitle.textContent = `Node ${from.id_in_project} → Node ${to.id_in_project}`;
     // Set default values
-    newConnDistance.value = "100";
+    newConnDistance.value = distanceDriverConnected ? "" : "100";
+    newConnDistance.disabled = distanceDriverConnected;
+    newConnDistance.placeholder = distanceDriverConnected
+      ? "Calculated by driver"
+      : "100";
     newConnSpeed.value = "60";
     newConnModal.classList.remove("hidden");
-    setTimeout(() => newConnDistance.focus(), 50);
+    setTimeout(
+      () => (distanceDriverConnected ? newConnSpeed : newConnDistance).focus(),
+      50,
+    );
   }
 
   function submitNewConnection() {
     if (!pendingFromNode || !pendingToNode) return;
-    const distance = parseFloat(newConnDistance.value);
     const speedLimit = parseFloat(newConnSpeed.value);
-    if (isNaN(distance) || isNaN(speedLimit)) return;
+    if (isNaN(speedLimit)) return;
 
-    socket.emit("create-connection", {
+    const payload = {
       from_node_id: pendingFromNode.node_id,
       to_node_id: pendingToNode.node_id,
-      distance,
       speed_limit: speedLimit,
-    });
+    };
+
+    if (!distanceDriverConnected) {
+      const distance = parseFloat(newConnDistance.value);
+      if (isNaN(distance)) return;
+      payload.distance = distance;
+    }
+    // If driver connected, omit distance — server will request from driver
+
+    socket.emit("create-connection", payload);
 
     newConnModal.classList.add("hidden");
     pendingFromNode = null;
@@ -810,6 +828,21 @@
   socket.on("congestion-update", (data) => {
     for (const [connId, cValue] of Object.entries(data)) {
       congestionTarget[connId] = cValue;
+    }
+  });
+
+  socket.on("distance-driver-status", (data) => {
+    distanceDriverConnected = data.connected;
+    console.log(
+      `🔗 Distance driver ${distanceDriverConnected ? "connected" : "disconnected"}`,
+    );
+    // Update any currently open editor panels
+    editDistance.disabled = distanceDriverConnected;
+    newConnDistance.disabled = distanceDriverConnected;
+    if (distanceDriverConnected) {
+      newConnDistance.placeholder = "Calculated by driver";
+    } else {
+      newConnDistance.placeholder = "100";
     }
   });
 

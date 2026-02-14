@@ -24,7 +24,10 @@ document.addEventListener("mousemove", (e) => {
   cursor.style.left = `${e.clientX}px`;
   cursor.style.top = `${e.clientY}px`;
 
-  if (e.target.closest(cursorHoverSelectors.join(", "))) {
+  const target = e.target;
+  if (target.disabled || target.closest("[disabled]")) {
+    cursor.classList.remove("is-hovering");
+  } else if (target.closest(cursorHoverSelectors.join(", "))) {
     cursor.classList.add("is-hovering");
   } else {
     cursor.classList.remove("is-hovering");

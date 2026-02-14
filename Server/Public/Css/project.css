@@ -216,6 +216,15 @@ body {
   box-shadow: 0 0 0 3px rgba(25, 196, 216, 0.15);
 }
 
+.editor-panel input:disabled,
+.modal-label input:disabled {
+  opacity: 0.5;
+  cursor: default !important;
+  pointer-events: none;
+  background: var(--border);
+  color: var(--text-dim);
+}
+
 .editor-actions {
   display: flex;
   gap: 8px;
